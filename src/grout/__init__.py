@@ -128,7 +128,44 @@ class Grout:
             f"blocksize=({self.block_width}, {self.block_height}), "
             f"tiles=({self.tile_cols}, {self.tile_rows}))"
         )
+        
+    def __getitem__(self, idx):
+        """Get tile by linear index or (col, row) tuple."""
+        if isinstance(idx, tuple):
+            tc, tr = idx
+        else:
+            # Linear index to (col, row)
+            tr, tc = divmod(idx, self.tile_cols)
+        
+        if not (0 <= tc < self.tile_cols and 0 <= tr < self.tile_rows):
+            raise IndexError(f"Tile index out of range: {idx}")
+        
+        offset_x = tc * self.block_width
+        offset_y = tr * self.block_height
+        ncol = min(self.block_width, self.ncol - offset_x)
+        nrow = min(self.block_height, self.nrow - offset_y)
+        
+        tile_xmin = self.xmin + offset_x * self.xres
+        tile_xmax = tile_xmin + ncol * self.xres
+        tile_ymax = self.ymax - offset_y * self.yres
+        tile_ymin = tile_ymax - nrow * self.yres
+        
+        return TileSpec(
+            col=tc, row=tr,
+            offset_x=offset_x, offset_y=offset_y,
+            ncol=ncol, nrow=nrow,
+            xmin=tile_xmin, xmax=tile_xmax,
+            ymin=tile_ymin, ymax=tile_ymax
+        )
 
+    def index_partition(self, n: int):
+        """Yield n index ranges (start, stop) — no tiles materialized."""
+        per_chunk = math.ceil(len(self) / n)
+        for i in range(n):
+            start = i * per_chunk
+            stop = min(start + per_chunk, len(self))
+            if start < stop:
+                yield (start, stop)
 
 def tile_index(g: Grout, backend: Literal['pandas', 'polars', 'list'] = 'pandas'):
     """Materialize tile index to a DataFrame or list.
